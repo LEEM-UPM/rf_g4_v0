@@ -63,6 +63,7 @@ void Error_Handler(void);
 #define SX1262_DIO2_GPIO_Port GPIOC
 #define SX1262_DIO1_Pin GPIO_PIN_15
 #define SX1262_DIO1_GPIO_Port GPIOC
+#define SX1262_DIO1_EXTI_IRQn EXTI15_10_IRQn
 #define SX1262_RESET_Pin GPIO_PIN_0
 #define SX1262_RESET_GPIO_Port GPIOA
 #define SX1262_BUSY_Pin GPIO_PIN_1
