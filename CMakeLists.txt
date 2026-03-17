@@ -21,21 +21,24 @@ add_executable(${CMAKE_PROJECT_NAME})
 
 add_subdirectory(cmake/stm32cubemx)
 add_subdirectory(third_party/sx126x_driver)
-add_subdirectory(bsp)
+add_subdirectory(bsp/sx1262)
 
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE)
 
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
-    poc/sx1262_tx/main.c
+    #poc/blinking_led/main.c
+    poc/sx1262/sx1262.c
+    poc/sx1262/main.c
 )
 
-target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE)
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+    poc/sx1262    
+)
 
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE)
 
 target_link_libraries(${CMAKE_PROJECT_NAME}
-    stm32cubemx
-    bsp_sx1262_driver
+    bsp_sx1262
 )
 
 # Remove wrong libob.a library dependency when using cpp files
