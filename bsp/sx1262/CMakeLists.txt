@@ -1,23 +1,37 @@
-# STATIC: generates a complete and self-contained .a because it integrates
-# both the HAL implementation (sx126x_hal.c) and the generic driver objects
-# (via OBJECT). The linker receives a single .a with no unresolved external references.
+# bsp/sx1262/CMakeLists.txt
+#
+# Board-specific SX1262 BSP for the RF board.
+#
+# This target provides two things:
+#
+#   1. bsp_sx1262.c — constructs the sx1262_config_t with the real pin
+#      assignments, RF switch callbacks, and IRQ registration hook for
+#      this specific PCB revision.
+#
+#   2. Satisfies the context type dependency: bsp_sx1262.c needs
+#      sx126x_hal_context_stm32.h to build the concrete HAL context.
+#      That header comes from platform_sx126x_stm32 via PUBLIC propagation.
+#
+# What this target does not contain:
+#   sx126x_hal.c lives in platform/stm32/sx126x_driver/.
+#   bsp_sx1262 does not implement the Semtech HAL — that is the platform's
+#   responsibility. bsp_sx1262 only knows about THIS board's wiring.
+
 add_library(bsp_sx1262 STATIC)
 
 target_sources(bsp_sx1262 PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/sx126x_hal_impl/sx126x_hal.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/sx1262_board.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/bsp_sx1262.c
 )
 
-# PUBLIC: sx1262_board.h and sx126x_hal_context.h must be visible
-# to any target that uses this BSP
+# PUBLIC: bsp_sx1262.h must be visible to the application and PoCs.
 target_include_directories(bsp_sx1262 PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/sx126x_hal_impl
 )
 
-# PUBLIC in sx126x_driver: propagates its headers (sx126x.h,
-# sx126x_hal.h) to anything that depends on bsp_sx1262_driver.
 target_link_libraries(bsp_sx1262 PUBLIC
-    sx126x_driver
+    driver_sx1262
+    platform_sx126x_stm32
     stm32cubemx
+PRIVATE
+    bsp_core # provides board_internal.h, not propagated upward
 )

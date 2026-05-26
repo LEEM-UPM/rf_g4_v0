@@ -7,7 +7,7 @@
 #include <stddef.h>
 
 #include "sx126x_hal.h"
-#include "sx126x_hal_context.h"
+#include "sx126x_hal_context_stm32.h"
 
 /**
  * @brief Wait until radio busy pin returns to 0
@@ -54,10 +54,6 @@ sx126x_hal_status_t sx126x_hal_write(const void *context,
                     GPIO_PIN_RESET);
   HAL_SPI_Transmit(sx126x_context->spi, command, command_length, HAL_MAX_DELAY);
   HAL_SPI_Transmit(sx126x_context->spi, data, data_length, HAL_MAX_DELAY);
-  //  TODO??
-  // if (data_length > 0) {
-  //   HAL_SPI_Transmit(sx126x_context->spi, data, data_length, HAL_MAX_DELAY);
-  // }
   HAL_GPIO_WritePin(sx126x_context->nss.port, sx126x_context->nss.pin,
                     GPIO_PIN_SET);
 

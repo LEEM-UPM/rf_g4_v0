@@ -1,10 +1,10 @@
 /*!
- * \file      sx126x_hal_context.h
+ * \file      sx126x_hal_context_stm32.h
  *
  * \brief     Declaration of SX126X HAL context
  */
-#ifndef SX126X_HAL_CONTEXT_H_
-#define SX126X_HAL_CONTEXT_H_
+#ifndef PLATFORM_STM32_SX126X_DRIVER_SX126X_HAL_CONTEXT_STM32_H_
+#define PLATFORM_STM32_SX126X_DRIVER_SX126X_HAL_CONTEXT_STM32_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,7 +28,7 @@ typedef struct {
   struct {
     GPIO_TypeDef *port;
     uint16_t pin;
-  } irq;
+  } dio1;
 
   struct {
     GPIO_TypeDef *port;
@@ -40,4 +40,4 @@ typedef struct {
 }
 #endif
 
-#endif // SX126X_HAL_CONTEXT_H_
+#endif /* PLATFORM_STM32_SX126X_DRIVER_SX126X_HAL_CONTEXT_STM32_H_ */
