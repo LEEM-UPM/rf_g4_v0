@@ -51,7 +51,7 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, SX1262_DIO3_Pin|SX1262_DIO2_Pin|SX1262_DIO1_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, SX1262_DIO3_Pin|SX1262_DIO2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, SX1262_RESET_Pin|SX1262_CS_Pin|SX1262_LNA_EN_Pin|SX1280_DIO1_Pin
@@ -61,12 +61,18 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOB, SX1280_RESET_Pin|SX1280_CS_Pin|SX1280_LNA_EN_Pin|SX1280_DIO3_Pin
                           |LED_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : SX1262_DIO3_Pin SX1262_DIO2_Pin SX1262_DIO1_Pin */
-  GPIO_InitStruct.Pin = SX1262_DIO3_Pin|SX1262_DIO2_Pin|SX1262_DIO1_Pin;
+  /*Configure GPIO pins : SX1262_DIO3_Pin SX1262_DIO2_Pin */
+  GPIO_InitStruct.Pin = SX1262_DIO3_Pin|SX1262_DIO2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : SX1262_DIO1_Pin */
+  GPIO_InitStruct.Pin = SX1262_DIO1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(SX1262_DIO1_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : SX1262_RESET_Pin SX1262_CS_Pin SX1262_LNA_EN_Pin SX1280_DIO1_Pin
                            FDCAN1_STB_Pin FDCAN2_STB_Pin SX1280_DIO2_Pin */
@@ -97,6 +103,10 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(SX1280_BUSY_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 
