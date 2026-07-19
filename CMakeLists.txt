@@ -38,10 +38,20 @@ add_subdirectory(platform/stm32/sx126x_driver)
 add_subdirectory(drivers/sx1262)
 add_subdirectory(bsp)
 
+add_library(RF STATIC
+    Core/Src/ASPID_FDCAN_NETWORK.c
+)
+
+target_include_directories(RF PUBLIC
+    $(CMAKE_CURRENT_SOURCE_DIR)/include
+)
+
+
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     #poc/blinking_led/main.c
     #poc/sx1262/chip_status.c
     poc/sx1262/tx_rx.c
+    Core/Src/ASPID_FDCAN_NETWORK.c
 )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}
