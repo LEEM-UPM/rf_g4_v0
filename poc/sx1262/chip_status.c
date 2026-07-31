@@ -2,6 +2,7 @@
 #include "gpio.h"
 #include "spi.h"
 #include "sx1262.h"
+#include "bsp_sx1262.h"
 #include "usart.h"
 #include <stdio.h>
 
@@ -14,6 +15,7 @@ int main(void) {
   MX_SPI1_Init();
   MX_USART3_UART_Init();
 
+  sx1262_init(bsp_sx1262_get_config());
   sx1262_chip_config();
   sx1262_radio_config();
 
