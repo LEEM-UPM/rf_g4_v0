@@ -42,6 +42,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     #poc/blinking_led/main.c
     #poc/sx1262/chip_status.c
     poc/sx1262/tx_rx.c
+    #poc/aplication/app.c
 )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}

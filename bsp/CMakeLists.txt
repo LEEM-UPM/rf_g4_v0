@@ -25,6 +25,7 @@ target_include_directories(bsp_core INTERFACE
 )
 
 add_subdirectory(sx1262)
+add_subdirectory(can)
 
 add_library(bsp_board STATIC)
 
@@ -38,6 +39,7 @@ target_include_directories(bsp_board PUBLIC
 
 target_link_libraries(bsp_board PUBLIC
     bsp_sx1262
+    bsp_can1
     bsp_core
 )
 

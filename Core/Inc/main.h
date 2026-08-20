@@ -72,6 +72,8 @@ void Error_Handler(void);
 #define SX1262_CS_GPIO_Port GPIOA
 #define SX1262_LNA_EN_Pin GPIO_PIN_3
 #define SX1262_LNA_EN_GPIO_Port GPIOA
+#define SX1262_SW_CTRL_Pin GPIO_PIN_11
+#define SX1262_SW_CTRL_GPIO_Port GPIOB
 #define SX1280_RESET_Pin GPIO_PIN_0
 #define SX1280_RESET_GPIO_Port GPIOB
 #define SX1280_CS_Pin GPIO_PIN_1
