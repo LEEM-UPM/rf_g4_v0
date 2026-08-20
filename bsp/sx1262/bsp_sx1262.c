@@ -5,7 +5,8 @@
  * This is the ONLY file in the project allowed to reference:
  *   - Concrete SPI handles       (hspi1)
  *   - Concrete GPIO ports/pins   (SX1262_CS_GPIO_Port, etc.)
- *   - RF switch GPIO control     (SX1262_LNA_EN_GPIO_Port)
+ *   - RF switch GPIO control     (SX1262_SW_CTRL_GPIO_Port)
+ *   - External LNA enable       (SX1262_LNA_EN_GPIO_Port)
  *   - Radio link parameters      (frequency, SF, BW, PA power)
  *
  * If the hardware changes (pin reassignment, new board revision, different
@@ -19,27 +20,36 @@
 #include "board_internal.h"
 #include "gpio.h"
 #include "spi.h"
+#include "sx126x.h"
 #include "sx126x_hal_context_stm32.h"
 
 /* -------------------------------------------------------------------------
  * RF switch control
  *
- * The PE4259 RF switch routes the antenna between the TX path (PA output)
- * and the RX path (LNA input). It is controlled by the SX1262_LNA_EN GPIO.
+ * The PE4259 RF switch routes the antenna between the TX path (PA output,
+ * RF1) and the RX path (external LNA input, RF2). This is a DIFFERENT
+ * signal from the LNA's own enable pin below — the two used to be
+ * (incorrectly) tied together in code onto a single GPIO; the switch's
+ * CTRL pin was actually left unconnected on the board (only tapped by a
+ * status LED), so the switch was never being commanded at all. CTRL is
+ * now wired to its own GPIO (SX1262_SW_CTRL, PB11).
  *
- * Switch behaviour (verify against schematic before changing):
- *   LNA_EN = LOW  → RFC connected to RF1 → TX path active
- *   LNA_EN = HIGH → RFC connected to RF2 → RX path active
+ * Switch behaviour — PE4259 datasheet Table 5 (single-pin control mode,
+ * VDD pin 6 tied to +3V3, only CTRL/pin 4 driven):
+ *   CTRL = HIGH → RFC connected to RF1 → TX path active
+ *   CTRL = LOW  → RFC connected to RF2 → RX path active
  *
  * These functions are private to this file. They are passed as callbacks
  * into sx1262_config_t so the driver can control the switch without knowing
  * anything about the GPIO or the switch topology.
  * ------------------------------------------------------------------------- */
 static void board_rf_switch_set_tx(void) {
+  HAL_GPIO_WritePin(SX1262_SW_CTRL_GPIO_Port, SX1262_SW_CTRL_Pin, GPIO_PIN_SET);
   HAL_GPIO_WritePin(SX1262_LNA_EN_GPIO_Port, SX1262_LNA_EN_Pin, GPIO_PIN_RESET);
 }
 
 static void board_rf_switch_set_rx(void) {
+  HAL_GPIO_WritePin(SX1262_SW_CTRL_GPIO_Port, SX1262_SW_CTRL_Pin, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(SX1262_LNA_EN_GPIO_Port, SX1262_LNA_EN_Pin, GPIO_PIN_SET);
 }
 
@@ -77,33 +87,46 @@ static const sx126x_hal_context_t s_hal_ctx = {
  *
  * These parameters define the LoRa link budget for the LEEM sounding rocket.
  * They encode decisions made by the RF team and are specific to this board
- * revision and the European 868 MHz ISM band.
+ * revision and the European 869.4-869.65 MHz ISM sub-band.
  *
  * Parameter rationale:
  *
- *   frequency_hz = 868 MHz
- *     ETSI EN 300 220 sub-band, 1% duty cycle applies above 868.6 MHz.
- *     868.0 MHz sits in the unrestricted sub-band for short bursts.
+ *   frequency_hz = 869.525 MHz
+ *     ETSI EN 300 220 sub-band g3 (869.40-869.65 MHz): up to +27 dBm ERP
+ *     and 10% duty cycle, vs +14 dBm ERP / 1% duty cycle in the general
+ *     868.0-868.6 MHz sub-band. tx_power_dbm below (+15 dBm) sits well
+ *     under both caps. 869.525 MHz is the sub-band center, matching the
+ *     well-known LoRaWAN RX2 channel. Sub-band is only 250 kHz wide:
+ *     BW250/BW500 would not fit inside it.
  *
- *   SF7 + BW125 + CR4/5
- *     Symbol rate ≈ 5.5 kbps. Time-on-air for a 16-byte packet ≈ 28 ms.
- *     Link budget at +14 dBm with a 0 dBi antenna:
- *       EIRP = +14 dBm, sensitivity ≈ −124 dBm → 138 dB link budget.
- *     Sufficient for 10 km LOS with margin. Increase SF for longer range
- *     at the cost of data rate (SF12 gives −137 dBm sensitivity, 3× slower).
+ *   SF10 + BW125 + CR4/5
+ *     Symbol rate ≈ 122 sym/s. Time-on-air for a 16-byte packet ≈ 330 ms.
+ *     Link budget at +15 dBm with a 0 dBi antenna:
+ *       EIRP = +15 dBm, sensitivity ≈ −132 dBm → 147 dB link budget.
+ *     Traded data rate for range/sensitivity vs SF7 (−124 dBm, ~28 ms/packet).
+ *     SF12 would push sensitivity to −137 dBm at roughly 3x the time-on-air.
+ *     At 330 ms time-on-air, keep the TX repetition period above 3.3 s to
+ *     stay under the 10% duty cycle limit of this sub-band.
  *
- *   tx_power_dbm = 14
- *     Conservative value for bring-up without a matched antenna.
- *     The SX1262 supports up to +22 dBm; increase after RF validation.
+ *   tx_power_dbm = 15
+ *     One step up from the +14 dBm bring-up value, still conservative.
+ *     The SX1262 supports up to +22 dBm here (sub-band cap is +27 dBm
+ *     ERP); increase further only after RF/antenna validation. Current
+ *     draw stays modest at this level (~91 mA per datasheet Table 3-6),
+ *     no VBAT headroom concerns like at +22 dBm (which needs VBAT>=3.3V).
  *
  *   sync_word = 0x12
  *     Private LoRa network identifier. 0x34 is reserved for LoRaWAN.
  *     Both ends of the link must use the same value.
  *
- *   use_dcdc = true
- *     Inductor L7 (15 µH) is populated on this board revision.
- *     DC-DC mode reduces current consumption vs LDO, important for
- *     battery-powered avionics. Set to false if L7 is not populated.
+ *   use_dcdc = false
+ *     Reverted from DC-DC: enabling it (schematic shows L7, 15 uH,
+ *     matching Table 5-3) made the chip unable to complete any TX at
+ *     all, worse than the LDO baseline. Root cause not yet confirmed —
+ *     possible bad solder joint / continuity issue on L7, since the
+ *     datasheet explicitly warns that running DC-DC without a working
+ *     inductor can damage the chip (see sx1262_chip_config() comment).
+ *     Do not re-enable until L7 continuity is verified with a multimeter.
  * ------------------------------------------------------------------------- */
 static const sx1262_config_t s_sx1262_config = {
     .hal = &s_hal_ctx,
@@ -112,13 +135,13 @@ static const sx1262_config_t s_sx1262_config = {
     .register_irq_handler = bsp_sx1262_register_irq_handler,
     .radio =
         {
-            .frequency_hz = 868000000U,
-            .sf = SX126X_LORA_SF7,
+            .frequency_hz = 869525000U,
+            .sf = SX126X_LORA_SF10,
             .bw = SX126X_LORA_BW_125,
             .cr = SX126X_LORA_CR_4_5,
-            .tx_power_dbm = 14,
+            .tx_power_dbm = 15,
             .sync_word = 0x12,
-            .use_dcdc = true,
+            .use_dcdc = false,
         },
 };
 
