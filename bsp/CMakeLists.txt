@@ -25,6 +25,7 @@ target_include_directories(bsp_core INTERFACE
 )
 
 add_subdirectory(sx1262)
+add_subdirectory(can)
 
 add_library(bsp_board STATIC)
 
@@ -38,5 +39,15 @@ target_include_directories(bsp_board PUBLIC
 
 target_link_libraries(bsp_board PUBLIC
     bsp_sx1262
+    bsp_can1
     bsp_core
+)
+
+# bsp_sx1262.c calls board_register_exti_callback(), which is implemented in
+# board.c (part of bsp_board), not just declared via bsp_core's headers.
+# This closes a genuine mutual dependency (bsp_board -> bsp_sx1262 for the
+# config getter, bsp_sx1262 -> bsp_board for EXTI registration); CMake
+# resolves STATIC library link cycles by repeating archives as needed.
+target_link_libraries(bsp_sx1262 PUBLIC
+    bsp_board
 )
