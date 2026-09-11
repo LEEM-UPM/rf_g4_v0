@@ -161,6 +161,17 @@ void sx1262_chip_config(void) {
 
   sx126x_set_dio2_as_rf_sw_ctrl(hal, false);
   sx126x_cal(hal, SX126X_CAL_ALL);
+
+  /*
+   * TxClamp workaround (datasheet §15.2): bits [4:1] of register 0x08D8
+   * must be set to 0b1111. Without this the PA over-voltage clamp is
+   * overly protective and backs off output power (up to 6 dB) whenever
+   * the antenna is even moderately mismatched.
+   */
+  uint8_t tx_clamp_cfg;
+  sx126x_read_register(hal, 0x08D8, &tx_clamp_cfg, 1);
+  tx_clamp_cfg |= 0x1E;
+  sx126x_write_register(hal, 0x08D8, &tx_clamp_cfg, 1);
 }
 
 /**
@@ -218,16 +229,19 @@ void sx1262_radio_config(void) {
 
   /*
    * PA configuration for SX1262 (not SX1261 — device_sel = 0x00).
-   * Values from datasheet table 13-21:
-   *   +14 dBm → pa_duty_cycle=0x02, hp_max=0x02
-   *   +22 dBm → pa_duty_cycle=0x04, hp_max=0x07
    *
-   * We use +14 dBm for bring-up to protect the chip when operating
-   * without a matched antenna. Increase once RF validation is done.
+   * pa_duty_cycle/hp_max are fixed at the maximum HP-PA setting (datasheet
+   * table 13-21, "+22 dBm" row). This is deliberately NOT the "PA optimal
+   * settings" table, which requires pa_duty_cycle/hp_max to be re-matched
+   * to tx_power_dbm every time it changes, AND SetTxParams pinned to
+   * +22 dBm regardless of the actual target power. Fixing the PA at max
+   * and letting SetTxParams set the real output power directly (valid
+   * range -9 to +22 dBm, datasheet §13.4.4) is less efficient but far
+   * less error-prone — tx_power_dbm alone controls the output level.
    */
   const sx126x_pa_cfg_params_t pa_cfg = {
-      .pa_duty_cycle = 0x03,
-      .hp_max = 0x02,
+      .pa_duty_cycle = 0x04,
+      .hp_max = 0x07,
       .device_sel = 0x00,
       .pa_lut = 0x01,
   };
@@ -253,6 +267,22 @@ void sx1262_radio_config(void) {
       .ldro = compute_ldro(s_config->radio.sf, s_config->radio.bw),
   };
   sx126x_set_lora_mod_params(hal, &mod);
+
+  /*
+   * Modulation quality workaround (datasheet §15.1): bit 2 of register
+   * 0x0889 must be 0 only for 500 kHz LoRa bandwidth, and 1 for any other
+   * LoRa BW (or FSK). The reset value (0x01) has this bit cleared, which
+   * is the *wrong* setting for any BW below 500 kHz and would degrade the
+   * remote receiver's sensitivity without this fix.
+   */
+  uint8_t tx_mod_cfg;
+  sx126x_read_register(hal, 0x0889, &tx_mod_cfg, 1);
+  if (s_config->radio.bw == SX126X_LORA_BW_500) {
+    tx_mod_cfg &= ~0x04;
+  } else {
+    tx_mod_cfg |= 0x04;
+  }
+  sx126x_write_register(hal, 0x0889, &tx_mod_cfg, 1);
 
   /*
    * pld_len_in_bytes is set to 0 here because sx1262_send_payload()
@@ -358,7 +388,23 @@ void sx1262_set_rx(void) {
   sx126x_clear_irq_status(s_config->hal, SX126X_IRQ_ALL);
   s_irq_pending = false;
 
-  /* Timeout = 0: continuous receive, the chip listens until told otherwise. */
+  /*
+   * Deliberately Single mode (timeout=0), NOT SX126X_RX_CONTINUOUS.
+   *
+   * This function is called again by the application after every
+   * RX_DONE/TIMEOUT event (see tx_rx.c), so re-arming is already handled
+   * explicitly at the app layer. In Single mode, each SetRx cleanly
+   * resets RxDataPointer to RxBaseAddr (datasheet §7.2) — matching the
+   * SetBufferBaseAddress(0,0) issued above on every call.
+   *
+   * Continuous mode was tried here, but it actively fights this design:
+   * the chip auto-rearms and keeps writing the buffer from wherever the
+   * internal RxDataPointer was left (it *increments* rather than resets,
+   * §7.2), while this function keeps forcing the base address back to 0
+   * and re-issuing SetRx on top of a receiver that may already be
+   * mid-listening or mid-reception — corrupting/freezing subsequent
+   * receptions instead of cleanly capturing each new packet.
+   */
   sx126x_set_rx(s_config->hal, 0);
 }
 
@@ -375,6 +421,36 @@ bool sx1262_read_received_packet(uint8_t *out_buf, uint8_t *out_length) {
   *out_length = buf_status.pld_len_in_bytes;
   sx126x_read_buffer(s_config->hal, buf_status.buffer_start_pointer, out_buf,
                      *out_length);
+
+  return true;
+}
+
+bool sx1262_get_pkt_status(sx1262_pkt_status_t *out) {
+  if (out == NULL)
+    return false;
+
+  sx126x_pkt_status_lora_t raw;
+  if (sx126x_get_lora_pkt_status(s_config->hal, &raw) != SX126X_STATUS_OK) {
+    return false;
+  }
+
+  out->rssi_dbm = raw.rssi_pkt_in_dbm;
+  out->snr_db = raw.snr_pkt_in_db;
+  out->signal_rssi_dbm = raw.signal_rssi_pkt_in_dbm;
+  return true;
+}
+
+bool sx1262_get_device_errors(uint16_t *out_errors) {
+  if (out_errors == NULL)
+    return false;
+
+  sx126x_errors_mask_t raw;
+  if (sx126x_get_device_errors(s_config->hal, &raw) != SX126X_STATUS_OK) {
+    return false;
+  }
+
+  *out_errors = (uint16_t)raw;
+  sx126x_clear_device_errors(s_config->hal);
   return true;
 }
 
@@ -420,10 +496,16 @@ sx1262_irq_event_t sx1262_get_event(void) {
 
   if (irq_status & SX126X_IRQ_TX_DONE)
     return SX1262_EVENT_TX_DONE;
-  if (irq_status & SX126X_IRQ_RX_DONE)
-    return SX1262_EVENT_RX_DONE;
+  /*
+   * CRC_ERROR must be checked before RX_DONE: on a corrupted packet the
+   * chip raises both bits together (reception completed, but the CRC
+   * check failed). Checking RX_DONE first would silently accept garbage
+   * payloads as valid.
+   */
   if (irq_status & SX126X_IRQ_CRC_ERROR)
     return SX1262_EVENT_CRC_ERROR;
+  if (irq_status & SX126X_IRQ_RX_DONE)
+    return SX1262_EVENT_RX_DONE;
   if (irq_status & SX126X_IRQ_TIMEOUT)
     return SX1262_EVENT_TIMEOUT;
 
